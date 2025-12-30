@@ -1,0 +1,32 @@
+{
+    "api_key": "YOUR_API_KEY_HERE",
+    "customer_id": "YOUR_CUSTOMER_ID",
+    "base_url": "https://api.axur.com/gateway/1.0/api",
+    "days_range": 30,
+    "scoring": {
+        "incident_weights": {
+            "ransomware-attack": 100,
+            "malware": 80,
+            "infostealer-credential": 80,
+            "phishing": 50,
+            "data-sale-message": 40,
+            "data-sale-website": 40,
+            "corporate-credential-leak": 35,
+            "database-exposure": 35,
+            "fake-social-media-profile": 20,
+            "fraudulent-brand-use": 20,
+            "fake-mobile-app": 30,
+            "similar-domain-name": 15,
+            "paid-search": 10,
+            "default": 10
+        },
+        "stealer_log_thresholds": {
+            "low": 5,
+            "medium": 20
+        },
+        "reputational_thresholds": {
+            "low": 10,
+            "medium": 50
+        }
+    }
+}

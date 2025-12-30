@@ -1,0 +1,22 @@
+# Archivos con credenciales sensibles
+config.json
+
+# Datos exportados
+credentials_*.json
+*_output.txt
+
+# Scripts de debug/pruebas
+debug_*.py
+test_*.py
+
+# Documentación privada de Axur
+doc api axur*.md
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# IDE
+.vscode/
+.idea/
