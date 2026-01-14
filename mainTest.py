@@ -880,168 +880,405 @@ def get_detected_credentials(domain_filter=None, days_back=7, show_details=True)
 
 
 # =============================================================================
-# EJECUCIÓN PRINCIPAL
+# DREAD ANALYSIS
 # =============================================================================
 
-def main():
-    # 1. Calcular Risk Score v3.0 (KRI Model)
-    risk_score = calculate_risk_score_v3()
+# Mapeo STRIDE: tipo de ticket -> categoría
+STRIDE_MAPPING = {
+    # Spoofing (Suplantación)
+    "phishing": "S",
+    "fake-social-media-profile": "S",
+    "executive-fake-social-media-profile": "S",
+    "similar-domain-name": "S",
+    # Tampering (Modificación)
+    "fraudulent-brand-use": "T",
+    "fake-mobile-app": "T",
+    # Repudiation (Repudio)
+    "unauthorized-sale": "R",
+    "unauthorized-distribution": "R",
+    # Information Disclosure (Fuga de Información)
+    "corporate-credential-leak": "I",
+    "code-secret-leak": "I",
+    "database-exposure": "I",
+    "data-exposure-website": "I",
+    "data-exposure-message": "I",
+    "other-sensitive-data": "I",
+    "executive-credential-leak": "I",
+    "executive-personalinfo-leak": "I",
+    # Denial of Service
+    "ransomware-attack": "D",
+    "infrastructure-exposure": "D",
+    "malware": "D",
+    # Elevation of Privilege
+    "infostealer-credential": "E",
+    "executive-card-leak": "E",
+    "executive-mobile-phone": "E",
+}
+
+STRIDE_NAMES = {
+    "S": "Spoofing (Suplantación)",
+    "T": "Tampering (Modificación)",
+    "R": "Repudiation (Repudio)",
+    "I": "Information Disclosure (Fuga de Info)",
+    "D": "Denial of Service (Interrupción)",
+    "E": "Elevation of Privilege (Escalamiento)",
+}
+
+# Pesos DREAD por tipo de ticket
+DREAD_REPRODUCIBILITY = {
+    "phishing": 9,
+    "fake-social-media-profile": 8,
+    "similar-domain-name": 7,
+    "malware": 6,
+    "ransomware-attack": 5,
+    "corporate-credential-leak": 4,
+    "infostealer-credential": 8,
+}
+
+def get_open_tickets(max_tickets=100):
+    """
+    Obtiene tickets abiertos/incidentes del cliente.
+    Endpoint: GET /tickets-api/tickets
+    """
+    endpoint = f"{BASE_URL}/tickets-api/tickets"
+    params = {
+        "ticket.customer": CUSTOMER_ID,
+        "status": "open,incident,treatment",
+        "open.date": f"ge:{START_DATE.strftime('%Y-%m-%d')}",
+        "pageSize": max_tickets,
+        "sortBy": "open.date",
+        "order": "desc"
+    }
     
-    # 2. Obtener Brands y Dominios del cliente
-    print(f"\n{'='*60}")
-    print("  Obteniendo Brands y Dominios del cliente...")
-    print(f"{'='*60}")
-    
-    brands, domain_to_brand = get_customer_assets()
-    
-    if brands:
-        print(f"\n  ✅ Se encontraron {len(brands)} marcas (Brands):\n")
-        
-        # Agrupar dominios por marca
-        brand_domains = {brand["name"]: [] for brand in brands}
-        unassigned_domains = []
-        
-        for domain, brand_name in domain_to_brand.items():
-            if brand_name and brand_name in brand_domains:
-                brand_domains[brand_name].append(domain)
-            else:
-                unassigned_domains.append(domain)
-        
-        # Mostrar cada marca con sus dominios
-        for i, brand in enumerate(brands, 1):
-            brand_name = brand["name"]
-            website = brand.get("official_website") or "(sin sitio)"
-            size = brand.get("size") or ""
-            associated_domains = brand_domains.get(brand_name, [])
-            
-            print(f"  [{i}] {brand_name} ({size})")
-            print(f"      Sitio oficial: {website}")
-            if associated_domains:
-                print(f"      Dominios asociados:")
-                for d in associated_domains:
-                    print(f"        • {d}")
-            print()
-        
-        if unassigned_domains:
-            print(f"  --- Dominios sin marca asignada ({len(unassigned_domains)}) ---")
-            for d in unassigned_domains[:10]:
-                print(f"      • {d}")
-            if len(unassigned_domains) > 10:
-                print(f"      ... y {len(unassigned_domains) - 10} más.")
-    else:
-        print("  ⚠️  No se encontraron marcas configuradas para este cliente.")
-    
-    # 3. Consultar credenciales detectadas (Exposure API - SIN consumir créditos)
-    print(f"\n{'='*60}")
-    print("  ¿Consultar credenciales detectadas?")
-    print("  (Usa Exposure API - NO consume créditos)")
-    print(f"{'='*60}")
-    
-    all_domains = list(domain_to_brand.keys())
-    
+    tickets = []
     try:
-        resp = input("\n  Consultar credenciales? (s/n): ").strip().lower()
-        if resp in ['s', 'si', 'y', 'yes']:
+        response = requests.get(endpoint, headers=HEADERS, params=params)
+        if response.status_code == 200:
+            data = response.json()
+            tickets = data.get("tickets", [])
+    except Exception as e:
+        print(f"  [Error] Obteniendo tickets: {e}")
+    
+    return tickets
+
+
+def calculate_dread_score(ticket):
+    """
+    Calcula el score DREAD (1-10) para un ticket individual.
+    
+    D = Damage (Daño potencial)
+    R = Reproducibility (Facilidad de replicar)
+    E = Exploitability (Facilidad de explotar)
+    A = Affected Users (Usuarios afectados)
+    D = Discoverability (Facilidad de descubrir)
+    """
+    detection = ticket.get("detection", {})
+    ticket_info = ticket.get("ticket", {})
+    
+    ticket_type = detection.get("type", "unknown")
+    criticality = detection.get("criticality", "medium")
+    collector = ticket_info.get("creation.collector", "")
+    prediction_risk = float(detection.get("prediction.risk", 0.5))
+    
+    # D - Damage: basado en criticality
+    damage_map = {"high": 9, "medium": 6, "low": 3}
+    D = damage_map.get(criticality, 5)
+    
+    # R - Reproducibility: basado en tipo de ticket
+    R = DREAD_REPRODUCIBILITY.get(ticket_type, 5)
+    
+    # E - Exploitability: basado en prediction.risk de Axur
+    E = int(prediction_risk * 10)
+    
+    # A - Affected Users: estimado por tipo
+    if "executive" in ticket_type:
+        A = 9  # Ejecutivos = alto impacto
+    elif "credential" in ticket_type:
+        A = 7  # Credenciales = muchos usuarios
+    elif "phishing" in ticket_type:
+        A = 6  # Phishing = clientes expuestos
+    else:
+        A = 4
+    
+    # D - Discoverability: basado en fuente/collector
+    if "telegram" in collector.lower() or "twitter" in collector.lower():
+        D2 = 9  # Público = fácil de descubrir
+    elif "deep" in collector.lower() or "dark" in collector.lower():
+        D2 = 4  # Dark web = difícil
+    else:
+        D2 = 6
+    
+    dread_score = (D + R + E + A + D2) / 5
+    
+    return {
+        "score": round(dread_score, 1),
+        "components": {"D": D, "R": R, "E": E, "A": A, "D2": D2},
+        "ticket_key": ticket_info.get("ticketKey", ""),
+        "type": ticket_type,
+        "reference": ticket_info.get("reference", "")[:50],
+        "criticality": criticality
+    }
+
+
+def analyze_dread():
+    """
+    Análisis DREAD: Prioriza tickets por score de riesgo.
+    """
+    print(f"\n{'='*70}")
+    print(f"  ╔════════════════════════════════════════════════════════════════╗")
+    print(f"  ║              ANÁLISIS DREAD - Priorización de Riesgo          ║")
+    print(f"  ╚════════════════════════════════════════════════════════════════╝")
+    print(f"{'='*70}")
+    print(f"\n  📖 ¿Qué es DREAD?")
+    print(f"  DREAD evalúa cada incidente con 5 factores (escala 1-10):")
+    print(f"    D = Damage        - ¿Cuánto daño puede causar?")
+    print(f"    R = Reproducibility - ¿Qué tan fácil es replicarlo?")
+    print(f"    E = Exploitability  - ¿Qué tan fácil es explotarlo?")
+    print(f"    A = Affected Users  - ¿Cuántos usuarios afectados?")
+    print(f"    D = Discoverability - ¿Qué tan fácil es descubrirlo?")
+    print(f"\n  Score Final = Promedio de los 5 factores (1-10)")
+    print(f"{'='*70}\n")
+    
+    print("  Obteniendo tickets abiertos...")
+    tickets = get_open_tickets(50)
+    
+    if not tickets:
+        print("  ⚠️  No se encontraron tickets abiertos en el período.")
+        return []
+    
+    print(f"  ✅ {len(tickets)} tickets encontrados. Calculando scores DREAD...\n")
+    
+    # Calcular DREAD para cada ticket
+    dread_results = []
+    for ticket in tickets:
+        result = calculate_dread_score(ticket)
+        dread_results.append(result)
+    
+    # Ordenar por score (mayor = más crítico)
+    dread_results.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Mostrar top 10
+    print(f"  {'─'*66}")
+    print(f"  TOP 10 TICKETS MÁS CRÍTICOS (por DREAD Score)")
+    print(f"  {'─'*66}")
+    print(f"  {'#':>3} {'Score':>6} {'Ticket':>8} {'Tipo':<25} {'Crit':<6}")
+    print(f"  {'─'*66}")
+    
+    for i, r in enumerate(dread_results[:10], 1):
+        score_color = "🔴" if r["score"] >= 7 else "🟠" if r["score"] >= 5 else "🟡"
+        print(f"  {i:>3} {score_color} {r['score']:>4} {r['ticket_key']:>8} {r['type']:<25} {r['criticality']:<6}")
+    
+    print(f"  {'─'*66}")
+    
+    # Resumen estadístico
+    avg_score = sum(r["score"] for r in dread_results) / len(dread_results)
+    high_risk = len([r for r in dread_results if r["score"] >= 7])
+    
+    print(f"\n  📊 RESUMEN:")
+    print(f"      Score promedio: {avg_score:.1f}/10")
+    print(f"      Tickets alto riesgo (>=7): {high_risk}")
+    print(f"      Tickets analizados: {len(dread_results)}")
+    
+    return dread_results
+
+
+def classify_stride():
+    """
+    Clasificación STRIDE: Agrupa tickets por categoría de amenaza.
+    """
+    print(f"\n{'='*70}")
+    print(f"  ╔════════════════════════════════════════════════════════════════╗")
+    print(f"  ║           CLASIFICACIÓN STRIDE - Matriz de Amenazas           ║")
+    print(f"  ╚════════════════════════════════════════════════════════════════╝")
+    print(f"{'='*70}")
+    print(f"\n  📖 ¿Qué es STRIDE?")
+    print(f"  STRIDE clasifica amenazas en 6 categorías:")
+    print(f"    S = Spoofing           - Suplantación de identidad")
+    print(f"    T = Tampering          - Modificación no autorizada")
+    print(f"    R = Repudiation        - Negación de acciones")
+    print(f"    I = Info Disclosure    - Fuga de información")
+    print(f"    D = Denial of Service  - Interrupción de servicio")
+    print(f"    E = Elevation          - Escalamiento de privilegios")
+    print(f"\n  Útil para: Identificar qué tipo de ataques predominan")
+    print(f"{'='*70}\n")
+    
+    print("  Obteniendo tickets...")
+    tickets = get_open_tickets(200)
+    
+    if not tickets:
+        print("  ⚠️  No se encontraron tickets.")
+        return {}
+    
+    # Clasificar por STRIDE
+    stride_counts = {"S": 0, "T": 0, "R": 0, "I": 0, "D": 0, "E": 0, "?": 0}
+    stride_examples = {"S": [], "T": [], "R": [], "I": [], "D": [], "E": [], "?": []}
+    
+    for ticket in tickets:
+        detection = ticket.get("detection", {})
+        ticket_type = detection.get("type", "unknown")
+        ticket_key = ticket.get("ticket", {}).get("ticketKey", "")
+        
+        category = STRIDE_MAPPING.get(ticket_type, "?")
+        stride_counts[category] += 1
+        if len(stride_examples[category]) < 3:
+            stride_examples[category].append(f"{ticket_key}:{ticket_type}")
+    
+    total = sum(stride_counts.values())
+    
+    print(f"  {'─'*66}")
+    print(f"  DISTRIBUCIÓN DE AMENAZAS POR CATEGORÍA STRIDE")
+    print(f"  {'─'*66}")
+    
+    # Ordenar por conteo
+    sorted_stride = sorted(stride_counts.items(), key=lambda x: x[1], reverse=True)
+    
+    for cat, count in sorted_stride:
+        if cat == "?":
+            continue
+        pct = (count / total * 100) if total > 0 else 0
+        bar = "█" * int(pct / 5)
+        name = STRIDE_NAMES.get(cat, "Desconocido")
+        emoji = "🔴" if pct > 30 else "🟠" if pct > 15 else "🟡"
+        print(f"  {emoji} [{cat}] {name:<35} {count:>4} ({pct:>5.1f}%) {bar}")
+    
+    if stride_counts["?"] > 0:
+        print(f"  ⚪ [?] Sin clasificar                              {stride_counts['?']:>4}")
+    
+    print(f"  {'─'*66}")
+    print(f"  Total: {total} tickets analizados")
+    
+    # Identificar amenaza dominante
+    dominant = max(stride_counts.items(), key=lambda x: x[1] if x[0] != "?" else 0)
+    if dominant[1] > 0:
+        print(f"\n  🎯 AMENAZA DOMINANTE: {STRIDE_NAMES.get(dominant[0], 'N/A')}")
+        print(f"     Representa {dominant[1]/total*100:.0f}% de los incidentes")
+    
+    return stride_counts
+
+
+def show_main_menu():
+    """
+    Muestra el menú principal con explicaciones para cada opción.
+    """
+    print(f"\n{'='*70}")
+    print(f"  ╔════════════════════════════════════════════════════════════════╗")
+    print(f"  ║       AXUR RISK ASSESSMENT v4.0 - {CUSTOMER_ID:^20}       ║")
+    print(f"  ╚════════════════════════════════════════════════════════════════╝")
+    print(f"{'='*70}")
+    print(f"\n  Selecciona el tipo de análisis que deseas ejecutar:\n")
+    
+    print(f"  ┌─────────────────────────────────────────────────────────────────┐")
+    print(f"  │  [1] RISK SCORE v3.0 (KRI)                                      │")
+    print(f"  │      📊 Visión ejecutiva: Score único 0-1000                    │")
+    print(f"  │      Compara tu postura vs el mercado. Ideal para reportes.     │")
+    print(f"  ├─────────────────────────────────────────────────────────────────┤")
+    print(f"  │  [2] ANÁLISIS DREAD                                             │")
+    print(f"  │      🎯 Priorización: ¿Qué incidentes atender primero?          │")
+    print(f"  │      Score individual por ticket según impacto y explotabilidad.│")
+    print(f"  ├─────────────────────────────────────────────────────────────────┤")
+    print(f"  │  [3] CLASIFICACIÓN STRIDE                                       │")
+    print(f"  │      📈 Matriz de amenazas: ¿Qué tipos de ataque predominan?    │")
+    print(f"  │      Agrupa incidentes en 6 categorías estratégicas.            │")
+    print(f"  ├─────────────────────────────────────────────────────────────────┤")
+    print(f"  │  [4] REPORTE COMPLETO                                           │")
+    print(f"  │      📋 Ejecuta los 3 análisis anteriores                       │")
+    print(f"  ├─────────────────────────────────────────────────────────────────┤")
+    print(f"  │  [5] CONSULTAR CREDENCIALES                                     │")
+    print(f"  │      🔐 Buscar credenciales expuestas por dominio               │")
+    print(f"  └─────────────────────────────────────────────────────────────────┘")
+    print(f"\n  [0] Salir\n")
+
+
+def main():
+    """Función principal con menú interactivo."""
+    
+    while True:
+        show_main_menu()
+        
+        try:
+            choice = input("  Selecciona una opción [0-5]: ").strip()
+        except:
+            break
+        
+        if choice == "0":
+            print("\n  👋 ¡Hasta luego!\n")
+            break
+            
+        elif choice == "1":
+            # Risk Score v3.0 (KRI)
+            calculate_risk_score_v3()
+            input("\n  Presiona ENTER para continuar...")
+            
+        elif choice == "2":
+            # Análisis DREAD
+            analyze_dread()
+            input("\n  Presiona ENTER para continuar...")
+            
+        elif choice == "3":
+            # Clasificación STRIDE
+            classify_stride()
+            input("\n  Presiona ENTER para continuar...")
+            
+        elif choice == "4":
+            # Reporte Completo
+            print("\n" + "="*70)
+            print("  EJECUTANDO REPORTE COMPLETO...")
+            print("="*70)
+            calculate_risk_score_v3()
+            analyze_dread()
+            classify_stride()
+            input("\n  Presiona ENTER para continuar...")
+            
+        elif choice == "5":
+            # Consultar Credenciales
+            brands, domain_to_brand = get_customer_assets()
+            all_domains = list(domain_to_brand.keys())
+            
             if all_domains:
-                # Mostrar opciones: por marca o por dominio
-                print(f"\n  Selecciona una opción:")
-                print(f"      [0] Sin filtro (mostrar TODAS sin restricción)")
-                print(f"      [A] TODAS pero solo dominios del cliente")
-                print(f"      [B] Filtrar por MARCA")
-                print(f"      [D] Filtrar por DOMINIO específico")
+                print(f"\n  Opciones de filtro:")
+                print(f"    [0] Sin filtro (todas las credenciales)")
+                print(f"    [A] Todas con dominios del cliente")
+                print(f"    [B] Filtrar por Marca (Brand)")
+                print(f"    [D] Filtrar por Dominio específico")
                 
-                choice = input("\n  Opción: ").strip().upper()
-                
-                if choice == "0":
-                    get_detected_credentials(domain_filter=None, days_back=30)
-                
-                elif choice == "A":
-                    # Todas las credenciales que coincidan con dominios registrados
-                    print(f"\n  Buscando credenciales para {len(all_domains)} dominios registrados...")
-                    print(f"  (Esto puede tomar un momento)\n")
+                try:
+                    filter_choice = input("\n  Opción: ").strip().upper()
                     
-                    total_found = 0
-                    results_by_domain = {}
-                    
-                    for dom in all_domains:
-                        # Consulta silenciosa (sin detalles)
-                        endpoint = f"{BASE_URL}/exposure-api/credentials"
-                        params = {
-                            "customer": CUSTOMER_ID,
-                            "created": f"ge:{(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')}",
-                            "status": "NEW,IN_TREATMENT",
-                            "user": f"contains:{dom}",
-                            "pageSize": 1
-                        }
-                        try:
-                            resp = requests.get(endpoint, headers=HEADERS, params=params)
-                            if resp.status_code == 200:
-                                count = resp.json().get("pageable", {}).get("total", 0)
-                                if count > 0:
-                                    brand = domain_to_brand.get(dom) or "(sin marca)"
-                                    results_by_domain[dom] = {"count": count, "brand": brand}
-                                    total_found += count
-                        except:
-                            pass
-                    
-                    # Mostrar resumen agrupado
-                    print(f"  {'='*50}")
-                    print(f"  RESUMEN POR DOMINIO (Solo con credenciales)")
-                    print(f"  {'='*50}")
-                    
-                    if results_by_domain:
-                        for dom, info in sorted(results_by_domain.items(), key=lambda x: x[1]["count"], reverse=True):
-                            print(f"  {dom:35} {info['count']:>6} creds  [{info['brand']}]")
-                        
-                        print(f"  {'='*50}")
-                        print(f"  TOTAL: {total_found} credenciales en {len(results_by_domain)} dominios")
+                    if filter_choice == "0":
+                        get_detected_credentials(domain_filter=None, days_back=30)
+                    elif filter_choice == "A":
+                        print("\n  Buscando en todos los dominios del cliente...")
+                        for domain in all_domains[:10]:
+                            print(f"    Consultando {domain}...")
+                            get_detected_credentials(domain_filter=domain, days_back=30, show_details=False)
+                    elif filter_choice == "B" and brands:
+                        print("\n  Marcas disponibles:")
+                        for i, b in enumerate(brands, 1):
+                            print(f"    [{i}] {b['name']}")
+                        brand_idx = int(input("\n  Marca #: ").strip()) - 1
+                        if 0 <= brand_idx < len(brands):
+                            brand_name = brands[brand_idx]["name"]
+                            brand_domains = [d for d, bn in domain_to_brand.items() if bn == brand_name]
+                            for bd in brand_domains:
+                                get_detected_credentials(domain_filter=bd, days_back=30)
+                    elif filter_choice == "D":
+                        print("\n  Dominios disponibles:")
+                        for i, d in enumerate(all_domains[:15], 1):
+                            print(f"    [{i}] {d}")
+                        dom_idx = int(input("\n  Dominio #: ").strip()) - 1
+                        if 0 <= dom_idx < len(all_domains):
+                            get_detected_credentials(domain_filter=all_domains[dom_idx], days_back=30)
                     else:
-                        print(f"  No se encontraron credenciales en los dominios registrados.")
-                    
-                elif choice == "B":
-                    print(f"\n  Selecciona una marca:")
-                    for i, brand in enumerate(brands, 1):
-                        print(f"      [{i}] {brand['name']}")
-                    
-                    try:
-                        brand_choice = int(input("\n  Marca #: ").strip())
-                        if 1 <= brand_choice <= len(brands):
-                            selected_brand = brands[brand_choice - 1]["name"]
-                            brand_doms = brand_domains.get(selected_brand, [])
-                            
-                            if brand_doms:
-                                print(f"\n  Buscando credenciales para {selected_brand}...")
-                                # Consultar cada dominio de la marca
-                                for dom in brand_doms:
-                                    get_detected_credentials(domain_filter=dom, days_back=30, show_details=False)
-                            else:
-                                print(f"  ⚠️  La marca {selected_brand} no tiene dominios asociados.")
-                    except ValueError:
-                        print("  Entrada inválida.")
-                        
-                elif choice == "D":
-                    print(f"\n  Dominios disponibles:")
-                    for i, domain in enumerate(all_domains[:20], 1):
-                        brand = domain_to_brand.get(domain) or "(sin marca)"
-                        print(f"      [{i}] {domain} -> {brand}")
-                    if len(all_domains) > 20:
-                        print(f"      ... y {len(all_domains) - 20} más.")
-                    
-                    try:
-                        dom_choice = int(input("\n  Dominio #: ").strip())
-                        if 1 <= dom_choice <= len(all_domains):
-                            selected_domain = all_domains[dom_choice - 1]
-                            get_detected_credentials(domain_filter=selected_domain, days_back=30)
-                    except ValueError:
-                        print("  Entrada inválida.")
-                else:
-                    get_detected_credentials(domain_filter=None, days_back=30)
+                        get_detected_credentials(domain_filter=None, days_back=30)
+                except:
+                    pass
             else:
                 get_detected_credentials(domain_filter=None, days_back=30)
-    except:
-        pass
-    
-    return risk_score
+            
+            input("\n  Presiona ENTER para continuar...")
+        
+        else:
+            print("\n  ⚠️  Opción no válida. Intenta de nuevo.")
 
 
 if __name__ == "__main__":
