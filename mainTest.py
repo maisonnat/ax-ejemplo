@@ -48,10 +48,43 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# Rango de fechas (desde config o 30 días por defecto)
+# Rango de fechas por defecto (se puede sobreescribir)
 END_DATE = datetime.now()
 START_DATE = END_DATE - timedelta(days=DAYS_RANGE)
 FMT_DATE = "%Y-%m-%dT%H:%M:%S"
+
+def get_date_range_selector():
+    """
+    Solicita al usuario seleccionar un rango de fechas.
+    Retorna (start_date, end_date) como objetos datetime.
+    """
+    print("\n  📅 Selección de Rango de Fechas:")
+    print("    [1] Últimos 7 días")
+    print("    [2] Últimos 30 días (Default)")
+    print("    [3] Últimos 90 días")
+    print("    [4] Personalizado (YYYY-MM-DD)")
+    
+    choice = input("\n  Opción [1-4] (Enter = 30 días): ").strip()
+    
+    end = datetime.now()
+    
+    if choice == "1":
+        start = end - timedelta(days=7)
+    elif choice == "3":
+        start = end - timedelta(days=90)
+    elif choice == "4":
+        try:
+            s_str = input("    Fecha inicio (YYYY-MM-DD): ").strip()
+            e_str = input("    Fecha fin    (YYYY-MM-DD): ").strip()
+            start = datetime.strptime(s_str, "%Y-%m-%d")
+            end = datetime.strptime(f"{e_str} 23:59:59", "%Y-%m-%d %H:%M:%S")
+        except:
+            print("  ⚠️  Formato inválido. Usando 30 días.")
+            start = end - timedelta(days=30)
+    else:
+        start = end - timedelta(days=30)
+        
+    return start, end
 
 
 # =============================================================================
@@ -148,7 +181,7 @@ def get_customer_domains():
 # ÍNDICE DE HIGIENE (30%) - Basado en Exposure API
 # =============================================================================
 
-def get_credential_exposure_score():
+def get_credential_exposure_score(start_date, end_date):
     """
     Calcula el índice de higiene basado en:
     1. Formato de la fuga (STEALER LOG = crítico)
@@ -160,7 +193,8 @@ def get_credential_exposure_score():
     
     params = {
         "status": "NEW,IN_TREATMENT",
-        "created": f"ge:{START_DATE.strftime('%Y-%m-%d')}",
+        "created": f"ge:{start_date.strftime('%Y-%m-%d')}",
+        "created": f"le:{end_date.strftime('%Y-%m-%d')}",
         "customer": CUSTOMER_ID,
         "pageSize": 100,
         "fields": "id,status,password.type,leak.format"
@@ -212,12 +246,12 @@ def get_credential_exposure_score():
 # ÍNDICE DE RESPUESTA (30%) - Basado en Takedown Uptime
 # =============================================================================
 
-def get_response_efficiency_score():
+def get_response_efficiency_score(start_date, end_date):
     endpoint = f"{BASE_URL}/tickets-api/stats/takedown/uptime"
     params = {
         "customer": CUSTOMER_ID,
-        "from": START_DATE.strftime(FMT_DATE),
-        "to": END_DATE.strftime(FMT_DATE)
+        "from": start_date.strftime(FMT_DATE),
+        "to": end_date.strftime(FMT_DATE)
     }
     
     response_score = 300
@@ -263,12 +297,12 @@ def get_response_efficiency_score():
 # VOLUMEN DE AMENAZAS (20%) - Basado en ticket-types
 # =============================================================================
 
-def get_incident_volume_score():
+def get_incident_volume_score(start_date, end_date):
     endpoint = f"{BASE_URL}/tickets-api/stats/incident/count/ticket-types"
     params = {
         "customer": CUSTOMER_ID,
-        "from": START_DATE.strftime(FMT_DATE),
-        "to": END_DATE.strftime(FMT_DATE),
+        "from": start_date.strftime(FMT_DATE),
+        "to": end_date.strftime(FMT_DATE),
         "ticketTypes": "phishing,malware,ransomware-attack,fake-social-media-profile,infostealer-credential,data-sale-message"
     }
     
@@ -304,13 +338,13 @@ def get_incident_volume_score():
 # ÍNDICE DE DAÑO REAL (20%) - Basado en Web Complaints
 # =============================================================================
 
-def get_real_damage_score():
+def get_real_damage_score(start_date, end_date):
     damage_score = 200
     
     endpoint = f"{BASE_URL}/web-complaints/results"
     params = {
-        "initialDate": START_DATE.strftime("%Y-%m-%d"),
-        "finalDate": END_DATE.strftime("%Y-%m-%d"),
+        "initialDate": start_date.strftime("%Y-%m-%d"),
+        "finalDate": end_date.strftime("%Y-%m-%d"),
         "order": "desc",
         "timezone": "-03:00",
         "page": 1,
@@ -340,28 +374,28 @@ def get_real_damage_score():
 # CÁLCULO FINAL DEL RISK SCORE
 # =============================================================================
 
-def calculate_risk_score():
+def calculate_risk_score(start_date, end_date):
     print(f"\n{'='*60}")
     print(f"  PUNTUACIÓN DE POSTURA DE RIESGO v2.0 - {CUSTOMER_ID}")
     print(f"{'='*60}")
-    print(f"  Período: {START_DATE.strftime('%Y-%m-%d')} a {END_DATE.strftime('%Y-%m-%d')}")
+    print(f"  Período: {start_date.strftime('%Y-%m-%d')} a {end_date.strftime('%Y-%m-%d')}")
     print(f"{'='*60}\n")
     
     print("[1/4] Calculando Índice de Higiene (Exposure API)...")
-    hygiene_penalty = get_credential_exposure_score()
+    hygiene_penalty = get_credential_exposure_score(start_date, end_date)
     hygiene_score = max(0, 300 - hygiene_penalty)
     print(f"      → Puntuación: {hygiene_score}/300\n")
     
     print("[2/4] Calculando Índice de Respuesta (Takedown Uptime)...")
-    response_score = get_response_efficiency_score()
+    response_score = get_response_efficiency_score(start_date, end_date)
     print(f"      → Puntuación: {response_score}/300\n")
     
     print("[3/4] Calculando Volumen de Amenazas (Ticket Types)...")
-    volume_score = get_incident_volume_score()
+    volume_score = get_incident_volume_score(start_date, end_date)
     print(f"      → Puntuación: {volume_score}/200\n")
     
     print("[4/4] Calculando Índice de Daño Real (Web Complaints)...")
-    damage_score = get_real_damage_score()
+    damage_score = get_real_damage_score(start_date, end_date)
     print(f"      → Puntuación: {damage_score}/200\n")
     
     final_score = hygiene_score + response_score + volume_score + damage_score
@@ -413,57 +447,148 @@ INCIDENT_WEIGHTS = {
     "paid-search": 10,
 }
 
-def get_weighted_incidents():
+def get_incidents_for_period(start_date, end_date):
+    """
+    Obtiene TODOS los incidentes creados en un rango de fechas.
+    Endpoint: /tickets-api/tickets
+    """
+    endpoint = f"{BASE_URL}/tickets-api/tickets"
+    # Construir params como lista de tuplas para permitir claves duplicadas (open.date)
+    # Usamos T00:00:00 y T23:59:59 para asegurar cobertura del día completo
+    s_str = start_date.strftime('%Y-%m-%d')
+    params_list = [
+        ("ticket.customer", CUSTOMER_ID),
+        ("open.date", f"ge:{s_str}T00:00:00")
+    ]
+    
+    if end_date:
+        e_str = end_date.strftime('%Y-%m-%d')
+        params_list.append(("open.date", f"le:{e_str}T23:59:59"))
+        
+    params_list.append(("pageSize", "200"))
+    params_list.append(("sortBy", "open.date"))
+    params_list.append(("order", "desc"))
+
+    all_tickets = []
+    page = 1
+    
+    try:
+        while True:
+            # Para paginación, necesitamos actualizar 'page' en la lista de tuplas.
+            # Como es una lista, es mejor reconstruirla o añadir al final si requests lo maneja bien.
+            # Requests acepta lista de tuplas.
+            current_params = params_list + [("page", str(page))]
+            
+            response = requests.get(endpoint, headers=HEADERS, params=current_params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                tickets = data.get("tickets", [])
+                
+                if not tickets:
+                    break
+                    
+                all_tickets.extend(tickets)
+                
+                if len(tickets) < 200: # pageSize hardcoded checks
+                    break
+                    
+                page += 1
+            else:
+                print(f"  [Error] API Status {response.status_code}: {response.text}")
+                break
+                
+    except Exception as e:
+        print(f"  [Error] Obteniendo detalle de incidentes: {e}")
+        
+    return all_tickets
+                
+
+
+def get_weighted_incidents(brand_filter=None, start_date=None, end_date=None, exclude_discarded=False):
     """
     KRI 1: Volumen ponderado de incidentes por gravedad.
-    Endpoint: /tickets-api/stats/incident/count/ticket-types
+    
+    MODIFICADO v2: Ahora usa /tickets-api/tickets para permitir filtrado por Asset/Marca.
+    Si brand_filter es None, calcula para todo el tenant (comportamiento legacy).
+    
+    MODIFICADO v3: Soporte para excluir tickets descartados (falsos positivos).
     """
-    endpoint = f"{BASE_URL}/tickets-api/stats/incident/count/ticket-types"
-    params = {
-        "customer": CUSTOMER_ID,
-        "from": START_DATE.strftime(FMT_DATE),
-        "to": END_DATE.strftime(FMT_DATE)
-    }
+    # Usar fechas globales si no se proveen (compatibilidad)
+    if not start_date: start_date = START_DATE
+    if not end_date: end_date = END_DATE
+
+    # 1. Obtener lista detallada de tickets
+    print(f"      Consultando detalle de incidentes (para filtrado exacto)...")
+    tickets = get_incidents_for_period(start_date, end_date)
     
     weighted_score = 0
     total_incidents = 0
     breakdown = {}
     
-    try:
-        response = requests.get(endpoint, headers=HEADERS, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            for item in data.get("totalByTicketType", []):
-                t_type = item.get("type", "")
-                count = item.get("totalOnPeriod", 0)
-                weight = INCIDENT_WEIGHTS.get(t_type, 10)
-                
-                weighted_score += count * weight
-                total_incidents += count
-                if count > 0:
-                    breakdown[t_type] = {"count": count, "weight": weight, "score": count * weight}
-                    
-    except Exception as e:
-        print(f"  [Error] Incidentes: {e}")
+    ignored_count = 0
+    discarded_filtered_count = 0
     
+    for ticket in tickets:
+        detection = ticket.get("detection", {})
+        
+        # Filtrado por Marca/Asset
+        if brand_filter:
+            assets = detection.get("assets", [])
+            # Verificamos si la marca solicitada está en la lista de assets del ticket
+            if brand_filter not in assets:
+                ignored_count += 1
+                continue
+        
+        # Filtrado por Estado/Resolución (Falsos Positivos)
+        if exclude_discarded:
+            # Si el usuario quiere solo "amenazas reales", descartamos lo que Axur marcó como "discarded"
+            # Ojo: Un ticket cerrado puede ser Threats Real (Takedown) o Falso Positivo (Discarded).
+            # Filtramos solo si resolution es explícitamente 'discarded'.
+            status = detection.get("status")
+            resolution = detection.get("resolution")
+            
+            if resolution == "discarded":
+                discarded_filtered_count += 1
+                continue
+                
+        # Procesar ticket válido
+        t_type = detection.get("type", "unknown")
+        
+        # Ignorar tickets fuera de rango estricto si la API trajo de más 
+        # (aunque el filtro ge: lo maneja bien)
+        
+        weight = INCIDENT_WEIGHTS.get(t_type, 10)
+        
+        weighted_score += weight
+        total_incidents += 1
+        
+        if t_type not in breakdown:
+            breakdown[t_type] = {"count": 0, "weight": weight, "score": 0}
+        
+        breakdown[t_type]["count"] += 1
+        breakdown[t_type]["score"] += weight
+    
+    if brand_filter:
+        print(f"      ℹ️  Filtrados {ignored_count} incidentes de otras marcas.")
+        
+    if exclude_discarded:
+        print(f"      ℹ️  Excluidos {discarded_filtered_count} falsos positivos (Discarded).")
+        
+    print(f"      ✅  Procesados {total_incidents} incidentes.")
+                    
     return weighted_score, total_incidents, breakdown
 
 
-def get_market_benchmark():
+def get_market_benchmark(end_date):
     """
     KRI 2: Comparativa con la MEDIANA del segmento de mercado del cliente.
     Endpoint: /tickets-api/stats/incident/customer/market-segment/median
-    
-    La API devuelve 13 meses de datos con estructura:
-    {
-        "marketSegment": "TECHNOLOGY",
-        "medians": [{"total": 42, "referenceMonth": "2024-11"}, ...]
-    }
     """
     endpoint = f"{BASE_URL}/tickets-api/stats/incident/customer/market-segment/median"
     params = {
         "customer": CUSTOMER_ID,
-        "to": END_DATE.strftime("%Y-%m-%d"),
+        "to": end_date.strftime("%Y-%m-%d"),
         "timezone": "-03:00"
     }
     
@@ -497,7 +622,7 @@ def get_market_benchmark():
     return market_segment, sector_median, reference_month
 
 
-def get_stealer_log_count():
+def get_stealer_log_count(start_date, end_date):
     """
     KRI 3: Conteo de credenciales de Stealer Logs (malware activo).
     Endpoint: /exposure-api/credentials con leak.format=STEALER LOG
@@ -506,7 +631,8 @@ def get_stealer_log_count():
     params = {
         "customer": CUSTOMER_ID,
         "status": "NEW,IN_TREATMENT",
-        "created": f"ge:{START_DATE.strftime('%Y-%m-%d')}",
+        "created": f"ge:{start_date.strftime('%Y-%m-%d')}",
+        "created": f"le:{end_date.strftime('%Y-%m-%d')}",
         "pageSize": 1  # Solo necesitamos el total
     }
     
@@ -535,7 +661,7 @@ def get_stealer_log_count():
     return stealer_count, plain_password_count
 
 
-def get_operational_efficiency():
+def get_operational_efficiency(start_date, end_date):
     """
     KRI 4: Eficiencia operativa basada en tiempos de resolución.
     Endpoint: /tickets-api/stats/takedown/uptime
@@ -543,8 +669,8 @@ def get_operational_efficiency():
     endpoint = f"{BASE_URL}/tickets-api/stats/takedown/uptime"
     params = {
         "customer": CUSTOMER_ID,
-        "from": START_DATE.strftime(FMT_DATE),
-        "to": END_DATE.strftime(FMT_DATE)
+        "from": start_date.strftime(FMT_DATE),
+        "to": end_date.strftime(FMT_DATE)
     }
     
     uptime_data = {}
@@ -579,15 +705,15 @@ def get_operational_efficiency():
     return uptime_data, slow_count, total_count
 
 
-def get_web_complaints_count():
+def get_web_complaints_count(start_date, end_date):
     """
     KRI 5: Conteo de quejas web (riesgo reputacional).
     Endpoint: /web-complaints/results
     """
     endpoint = f"{BASE_URL}/web-complaints/results"
     params = {
-        "initialDate": START_DATE.strftime("%Y-%m-%d"),
-        "finalDate": END_DATE.strftime("%Y-%m-%d"),
+        "initialDate": start_date.strftime("%Y-%m-%d"),
+        "finalDate": end_date.strftime("%Y-%m-%d"),
         "page": 1,
         "pageSize": 1
     }
@@ -604,7 +730,7 @@ def get_web_complaints_count():
     return complaints_count
 
 
-def calculate_risk_score_v3():
+def calculate_risk_score_v3(brand_filter=None, start_date=None, end_date=None, exclude_discarded=False):
     """
     Risk Score v3.0 - Modelo KRI (Key Risk Indicators)
     
@@ -612,16 +738,25 @@ def calculate_risk_score_v3():
     
     Donde Base = min(1000, WeightedIncidents / MarketRatio)
     """
+    # Defaults locales si no vienen
+    if not start_date: start_date = START_DATE
+    if not end_date: end_date = END_DATE
+
     print(f"\n{'='*65}")
     print(f"  ╔═══════════════════════════════════════════════════════════╗")
-    print(f"  ║  RISK SCORE v3.0 (Modelo KRI) - {CUSTOMER_ID:^20}       ║")
+    if brand_filter:
+        print(f"  ║  RISK SCORE v3.0 (KRI) - {brand_filter:^20}           ║")
+    else:
+        print(f"  ║  RISK SCORE v3.0 (KRI) - {CUSTOMER_ID:^20}           ║")
     print(f"  ╚═══════════════════════════════════════════════════════════╝")
-    print(f"  Período: {START_DATE.strftime('%Y-%m-%d')} a {END_DATE.strftime('%Y-%m-%d')}")
+    print(f"  Período: {start_date.strftime('%Y-%m-%d')} a {end_date.strftime('%Y-%m-%d')}")
+    if exclude_discarded:
+        print(f"  Filtro:  EXCLUYENDO DESCARTADOS (Solo Activos)")
     print(f"{'='*65}\n")
     
     # --- KRI 1: Weighted Incidents ---
     print("[1/5] Analizando Volumen Ponderado de Incidentes...")
-    weighted_score, total_incidents, breakdown = get_weighted_incidents()
+    weighted_score, total_incidents, breakdown = get_weighted_incidents(brand_filter, start_date, end_date, exclude_discarded)
     
     top_threats = sorted(breakdown.items(), key=lambda x: x[1]["score"], reverse=True)[:3]
     if top_threats:
@@ -632,7 +767,7 @@ def calculate_risk_score_v3():
     
     # --- KRI 2: Market Benchmark ---
     print("[2/5] Obteniendo Benchmark del Sector...")
-    market_segment, sector_median, reference_month = get_market_benchmark()
+    market_segment, sector_median, reference_month = get_market_benchmark(end_date)
     
     if sector_median > 0:
         ratio = total_incidents / sector_median
@@ -657,7 +792,7 @@ def calculate_risk_score_v3():
     
     # --- KRI 3: Stealer Logs (Critical) ---
     print("[3/5] Detectando Stealer Logs (Malware Activo)...")
-    stealer_count, plain_count = get_stealer_log_count()
+    stealer_count, plain_count = get_stealer_log_count(start_date, end_date)
     
     if stealer_count == 0:
         stealer_factor = 0
@@ -678,7 +813,7 @@ def calculate_risk_score_v3():
     
     # --- KRI 4: Operational Efficiency ---
     print("[4/5] Evaluando Eficiencia Operativa...")
-    uptime_data, slow_count, total_count = get_operational_efficiency()
+    uptime_data, slow_count, total_count = get_operational_efficiency(start_date, end_date)
     
     if total_count > 0:
         efficiency_pct = ((total_count - slow_count) / total_count) * 100
@@ -703,7 +838,7 @@ def calculate_risk_score_v3():
     
     # --- KRI 5: Impacto Reputacional ---
     print("[5/5] Evaluando Impacto Reputacional...")
-    reputational_count = get_web_complaints_count()
+    reputational_count = get_web_complaints_count(start_date, end_date)
     
     if reputational_count == 0:
         reputational_factor = 0
@@ -935,16 +1070,18 @@ DREAD_REPRODUCIBILITY = {
     "infostealer-credential": 8,
 }
 
-def get_open_tickets(max_tickets=100):
+def get_open_tickets(max_tickets=100, start_date=None):
     """
     Obtiene tickets abiertos/incidentes del cliente.
     Endpoint: GET /tickets-api/tickets
     """
+    if not start_date: start_date = START_DATE
+    
     endpoint = f"{BASE_URL}/tickets-api/tickets"
     params = {
         "ticket.customer": CUSTOMER_ID,
         "status": "open,incident,treatment",
-        "open.date": f"ge:{START_DATE.strftime('%Y-%m-%d')}",
+        "open.date": f"ge:{start_date.strftime('%Y-%m-%d')}",
         "pageSize": max_tickets,
         "sortBy": "open.date",
         "order": "desc"
@@ -1020,14 +1157,18 @@ def calculate_dread_score(ticket):
     }
 
 
-def analyze_dread():
+def analyze_dread(start_date=None, end_date=None):
     """
     Análisis DREAD: Prioriza tickets por score de riesgo.
     """
+    if not start_date: start_date = START_DATE
+    if not end_date: end_date = END_DATE
+    
     print(f"\n{'='*70}")
     print(f"  ╔════════════════════════════════════════════════════════════════╗")
     print(f"  ║              ANÁLISIS DREAD - Priorización de Riesgo          ║")
     print(f"  ╚════════════════════════════════════════════════════════════════╝")
+    print(f"  Período: {start_date.strftime('%Y-%m-%d')} a {end_date.strftime('%Y-%m-%d')}")
     print(f"{'='*70}")
     print(f"\n  📖 ¿Qué es DREAD?")
     print(f"  DREAD evalúa cada incidente con 5 factores (escala 1-10):")
@@ -1040,7 +1181,7 @@ def analyze_dread():
     print(f"{'='*70}\n")
     
     print("  Obteniendo tickets abiertos...")
-    tickets = get_open_tickets(50)
+    tickets = get_open_tickets(50, start_date)
     
     if not tickets:
         print("  ⚠️  No se encontraron tickets abiertos en el período.")
@@ -1082,14 +1223,18 @@ def analyze_dread():
     return dread_results
 
 
-def classify_stride():
+def classify_stride(start_date=None, end_date=None):
     """
     Clasificación STRIDE: Agrupa tickets por categoría de amenaza.
     """
+    if not start_date: start_date = START_DATE
+    if not end_date: end_date = END_DATE
+
     print(f"\n{'='*70}")
     print(f"  ╔════════════════════════════════════════════════════════════════╗")
     print(f"  ║           CLASIFICACIÓN STRIDE - Matriz de Amenazas           ║")
     print(f"  ╚════════════════════════════════════════════════════════════════╝")
+    print(f"  Período: {start_date.strftime('%Y-%m-%d')} a {end_date.strftime('%Y-%m-%d')}")
     print(f"{'='*70}")
     print(f"\n  📖 ¿Qué es STRIDE?")
     print(f"  STRIDE clasifica amenazas en 6 categorías:")
@@ -1103,7 +1248,7 @@ def classify_stride():
     print(f"{'='*70}\n")
     
     print("  Obteniendo tickets...")
-    tickets = get_open_tickets(200)
+    tickets = get_open_tickets(200, start_date)
     
     if not tickets:
         print("  ⚠️  No se encontraron tickets.")
@@ -1206,17 +1351,55 @@ def main():
             
         elif choice == "1":
             # Risk Score v3.0 (KRI)
-            calculate_risk_score_v3()
+            start, end = get_date_range_selector()
+            
+            # Preguntar si desea filtrar por marca
+            brands, domain_to_brand = get_customer_assets()
+            brand_filter = None
+            
+            if brands:
+                print("\n  ¿Desea filtrar por una Marca/Asset específico? (Recomendado para accuracy)")
+                filter_yn = input("  [S/n]: ").strip().lower()
+                
+                if filter_yn in ["s", "si", "y", "yes", ""]:
+                    print("\n  Marcas disponibles:")
+                    for i, b in enumerate(brands, 1):
+                        name = b.get("name", "N/A")
+                        key = b.get("key", "")
+                        print(f"    [{i}] {name} ({key})")
+                    
+                    try:
+                        idx = int(input("\n  Seleccione marca #: ")) - 1
+                        if 0 <= idx < len(brands):
+                            selected = brands[idx]
+                            brand_filter = selected.get("key") or selected.get("name")
+                            print(f"  ✅ Filtrando por: {brand_filter}")
+                    except:
+                        pass
+
+            # Preguntar si desea excluir tickets descartados/cerrados
+            exclude_discarded = False
+            print("\n  ¿Excluir tickets descartados/falsos positivos? (Mostrar solo Amenazas Activas)")
+            discard_yn = input("  [S/n]: ").strip().lower()
+            if discard_yn in ["s", "si", "y", "yes", ""]:
+                exclude_discarded = True
+                print("  ✅ Excluyendo falsos positivos.")
+            else:
+                print("  ⚠️  Incluyendo todo el volumen histórico.")
+            
+            calculate_risk_score_v3(brand_filter, start, end, exclude_discarded)
             input("\n  Presiona ENTER para continuar...")
             
         elif choice == "2":
             # Análisis DREAD
-            analyze_dread()
+            start, end = get_date_range_selector()
+            analyze_dread(start, end)
             input("\n  Presiona ENTER para continuar...")
             
         elif choice == "3":
             # Clasificación STRIDE
-            classify_stride()
+            start, end = get_date_range_selector()
+            classify_stride(start, end)
             input("\n  Presiona ENTER para continuar...")
             
         elif choice == "4":
@@ -1224,9 +1407,26 @@ def main():
             print("\n" + "="*70)
             print("  EJECUTANDO REPORTE COMPLETO...")
             print("="*70)
-            calculate_risk_score_v3()
-            analyze_dread()
-            classify_stride()
+            
+            start, end = get_date_range_selector()
+            
+            # Se podría preguntar marca una vez y pasarla, pero por simplicidad
+            # dejamos el flujo de Risk Score que ya la pregunta
+            # Aunque siendo reporte completo, sería ideal preguntar una sola vez
+            # Para esta iteración, que pregunte el Risk Score individualmente
+            
+            calculate_risk_score_v3(None, start, end) # Risk score preguntará marca si se corre interactivo... pero calculate_risk_score_v3 ya no pregunta, lo hace Main.
+            # ERROR: calculate_risk_score_v3 NO pregunta, recibe param. 
+            # DEBEMOS preguntar filtro de marca aqui tambien si queremos consistencia.
+            # O asumimos 'global' para el reporte completo.
+            
+            # Corrección: El Main pregunta antes de llamar a calculate_risk_score_v3. 
+            # Aquí en "Reporte Completo", llamaremos sin filtro (None) para visión global,
+            # o implementamos pregunta si el usuario quiere.
+            # Por simplicidad, "Reporte Completo" asumiremos visión global para no complicar el flujo.
+            
+            analyze_dread(start, end)
+            classify_stride(start, end)
             input("\n  Presiona ENTER para continuar...")
             
         elif choice == "5":

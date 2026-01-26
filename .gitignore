@@ -6,8 +6,8 @@ credentials_*.json
 *_output.txt
 
 # Scripts de debug/pruebas
-debug_*.py
-test_*.py
+debug_*.*
+test_*.*
 
 # Documentación privada de Axur
 doc api axur*.md

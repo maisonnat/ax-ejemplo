@@ -423,14 +423,37 @@ data-exposure-message, dw-activity, unauthorized-sale, infrastructure-exposure
 | **Exposure API** | https://docs.axur.com/en/axur/api/#tag/Exposure-API |
 | **Customers API** | https://docs.axur.com/en/axur/api/#tag/Customers |
 
-### Límites y Consideraciones
+### Límites Técnicos y Manejo de Errores
 
-| Aspecto | Límite |
+Es crucial considerar estas limitaciones para evitar errores en producción:
+
+#### 1. Paginación y Límites de Volumen
+- **Page Size Máximo:** La API de Tickets (`/tickets-api/tickets`) tiene un **límite estricto de 200 items** por página.
+  - *Error Común:* Solicitar `pageSize=500` retorna un error **HTTP 400 Bad Request**.
+  - *Solución:* El script implementa un bucle automático que solicita páginas de 200 en 200 hasta obtener todos los resultados en el rango de fechas.
+
+- **Rate Limiting (HTTP 429):**
+  - Si recibes un error **429 Too Many Requests**, has excedido la cuota de peticiones.
+  - *Mitigación:* Implementar un "backoff exponencial" (esperar unos segundos antes de reintentar).
+
+#### 2. Filtrado de Fechas y Precisión Horaria
+- **Precisión:** Para evitar perder incidentes del último día del rango, el script automáticamente añade horas de inicio y fin:
+  - `start_date` → `YYYY-MM-DD T00:00:00`
+  - `end_date`   → `YYYY-MM-DD T23:59:59`
+- **Operadores:** Se usan prefijos `ge:` y `le:` para garantizar la integridad del periodo seleccionado.
+
+#### 3. Filtros de Calidad (Activos vs Descartados)
+- **Falsos Positivos:** La plataforma Axur puede marcar incidentes como `resolution: discarded`.
+- **Opciones del Script:**
+  - **Modo Estándar:** Contabiliza TODO incidente abierto en el periodo (Volumen de Amenaza).
+  - **Modo "Solo Activos":** (Nuevo) Permite excluir tickets descartados para alinear el conteo con la vista de "Pendientes" o "Confirmados" del portal.
+
+| Aspecto | Valor / Límite |
 |:---|:---|
-| Rate Limit | 60 requests/minuto |
-| Rango máximo Stats | 90 días |
-| Page Size máximo | 1000 elementos |
-| Benchmark | Retorna últimos 13 meses |
+| **Page Size Máx** | 200 (Tickets API) |
+| **Rango Stats Máx** | 90 días |
+| **Timeouts** | Recomendado 30s |
+| **Benchmark** | Histórico 13 meses |
 
 ### Soporte
 
