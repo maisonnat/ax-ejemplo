@@ -140,6 +140,30 @@ GET /tickets-api/tickets
 
 ---
 
+### Filtro por Origen de Detección (OnePixel)
+
+#### 👔 Visión de Negocio
+
+> "¿Cuántas amenazas fueron detectadas gracias al script OnePixel instalado en nuestra web?"
+
+Esta función permite medir la efectividad del sistema de protección **OnePixel** de Axur, identificando tickets que fueron creados específicamente por este mecanismo de defensa.
+
+#### 💻 Visión Técnica
+
+**Origen de Detección (`ticket.creation.originator`):**
+
+| Valor | Significado |
+|:---|:---|
+| `onepixel` | Detectado por el script de protección OnePixel |
+| `platform` | Detectado por la plataforma Axur |
+| `api` | Insertado manualmente via API |
+| `collector` | Detectado por colectores específicos |
+
+**Filtrado Eficiente:**
+El filtro se aplica a nivel de API (server-side), garantizando alta eficiencia incluso con grandes volúmenes de datos.
+
+---
+
 ### STRIDE Classification
 
 #### 👔 Visión de Negocio

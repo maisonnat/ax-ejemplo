@@ -11,7 +11,7 @@ test_*.*
 
 # Documentación privada de Axur
 doc api axur*.md
-
+DIAGNOSIS_FIX_REPORT.md
 # Python
 __pycache__/
 *.pyc

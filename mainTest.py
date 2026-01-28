@@ -447,10 +447,13 @@ INCIDENT_WEIGHTS = {
     "paid-search": 10,
 }
 
-def get_incidents_for_period(start_date, end_date):
+def get_incidents_for_period(start_date, end_date, originator_filter=None):
     """
     Obtiene TODOS los incidentes creados en un rango de fechas.
     Endpoint: /tickets-api/tickets
+    
+    Args:
+        originator_filter: Opcional. Filtra por origen de detección (ej. "onepixel", "api").
     """
     endpoint = f"{BASE_URL}/tickets-api/tickets"
     # Construir params como lista de tuplas para permitir claves duplicadas (open.date)
@@ -464,7 +467,11 @@ def get_incidents_for_period(start_date, end_date):
     if end_date:
         e_str = end_date.strftime('%Y-%m-%d')
         params_list.append(("open.date", f"le:{e_str}T23:59:59"))
-        
+    
+    # Filtro por origen de detección (OnePixel, API, etc.)
+    if originator_filter:
+        params_list.append(("ticket.creation.originator", originator_filter))
+    
     params_list.append(("pageSize", "200"))
     params_list.append(("sortBy", "open.date"))
     params_list.append(("order", "desc"))
@@ -1330,6 +1337,9 @@ def show_main_menu():
     print(f"  ├─────────────────────────────────────────────────────────────────┤")
     print(f"  │  [5] CONSULTAR CREDENCIALES                                     │")
     print(f"  │      🔐 Buscar credenciales expuestas por dominio               │")
+    print(f"  ├─────────────────────────────────────────────────────────────────┤")
+    print(f"  │  [6] FILTRAR POR ORIGEN DE DETECCIÓN                            │")
+    print(f"  │      📡 Buscar tickets por fuente (OnePixel, API, Plataforma)   │")
     print(f"  └─────────────────────────────────────────────────────────────────┘")
     print(f"\n  [0] Salir\n")
 
@@ -1474,6 +1484,63 @@ def main():
                     pass
             else:
                 get_detected_credentials(domain_filter=None, days_back=30)
+            
+            input("\n  Presiona ENTER para continuar...")
+        
+        elif choice == "6":
+            # Filtrar por Origen de Detección
+            print("\n" + "="*65)
+            print("  FILTRAR POR ORIGEN DE DETECCIÓN")
+            print("="*65)
+            
+            # Mostrar orígenes conocidos
+            print("\n  Orígenes de detección disponibles:")
+            print("    [1] OnePixel  - Detección automática por script de protección")
+            print("    [2] Platform  - Detectado por la plataforma Axur")
+            print("    [3] API       - Insertado manualmente via API")
+            print("    [4] Collector - Detectado por colectores específicos")
+            print("    [0] Cancelar")
+            
+            try:
+                origin_choice = input("\n  Selecciona origen #: ").strip()
+                
+                if origin_choice == "0":
+                    continue
+                
+                origin_map = {
+                    "1": "onepixel",
+                    "2": "platform",
+                    "3": "api",
+                    "4": "collector"
+                }
+                
+                if origin_choice not in origin_map:
+                    print("  ⚠️  Opción no válida.")
+                    continue
+                    
+                originator = origin_map[origin_choice]
+                
+                start, end = get_date_range_selector()
+                
+                print(f"\n  🔍 Buscando tickets con origen '{originator}'...")
+                tickets = get_incidents_for_period(start, end, originator_filter=originator)
+                
+                if not tickets:
+                    print(f"  ℹ️  No se encontraron tickets con origen '{originator}' en el período.")
+                else:
+                    print(f"\n  ✅ Encontrados {len(tickets)} tickets detectados por {originator.upper()}")
+                    print("\n  Resumen por Tipo:")
+                    
+                    type_counts = {}
+                    for t in tickets:
+                        t_type = t.get("detection", {}).get("type", "unknown")
+                        type_counts[t_type] = type_counts.get(t_type, 0) + 1
+                    
+                    for t_type, count in sorted(type_counts.items(), key=lambda x: -x[1])[:10]:
+                        print(f"    • {t_type}: {count}")
+                        
+            except Exception as e:
+                print(f"  [Error] {e}")
             
             input("\n  Presiona ENTER para continuar...")
         
