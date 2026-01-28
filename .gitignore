@@ -20,3 +20,9 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Agent Configuration (Stealth Integration)
+.agent/
+
+# Legacy script (kept locally, excluded from GitHub)
+mainTest.py

@@ -4,6 +4,8 @@
 
 Este documento sirve como puente entre la [documentación oficial de Axur](https://docs.axur.com/en/axur/api/) y la implementación práctica de metodologías de riesgo.
 
+🌐 **Idioma**: **Español** | [English](README.en.md) | [Português](README.pt.md)
+
 ---
 
 ## 📋 Tabla de Contenidos

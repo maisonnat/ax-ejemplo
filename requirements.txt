@@ -1,0 +1,4 @@
+# Axur Risk Assessment Toolkit
+# Python dependencies
+
+requests>=2.28.0
