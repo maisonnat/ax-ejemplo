@@ -1538,6 +1538,66 @@ def main():
                     
                     for t_type, count in sorted(type_counts.items(), key=lambda x: -x[1])[:10]:
                         print(f"    • {t_type}: {count}")
+                    
+                    # Preguntar si desea ver los ticket keys
+                    print("\n  ¿Ver detalles de los tickets? (para verificar en plataforma)")
+                    show_keys = input("  [S/n]: ").strip().lower()
+                    
+                    if show_keys in ["s", "si", "y", "yes", ""]:
+                        print(f"\n  {'─'*65}")
+                        print(f"  {'KEY':<15} │ {'TIPO':<30} │ {'FECHA':<12}")
+                        print(f"  {'─'*65}")
+                        
+                        # Ordenar por fecha descendente
+                        sorted_tickets = sorted(tickets, 
+                            key=lambda x: x.get("detection", {}).get("open", {}).get("date", ""), 
+                            reverse=True)
+                        
+                        page_size = 15
+                        total_pages = (len(sorted_tickets) + page_size - 1) // page_size
+                        current_page = 0
+                        
+                        while True:
+                            start_idx = current_page * page_size
+                            end_idx = min(start_idx + page_size, len(sorted_tickets))
+                            
+                            for t in sorted_tickets[start_idx:end_idx]:
+                                # El campo correcto es ticket.ticketKey
+                                key = t.get("ticket", {}).get("ticketKey", "N/A")
+                                t_type = t.get("detection", {}).get("type", "unknown")[:28]
+                                # La fecha puede estar en ticket.creation.date o detection.open.date
+                                date_str = t.get("ticket", {}).get("creation.date", "") or t.get("detection", {}).get("open", {}).get("date", "")
+                                date_str = date_str[:10] if date_str else ""
+                                print(f"  {key:<15} │ {t_type:<30} │ {date_str:<12}")
+                            
+                            if total_pages <= 1:
+                                break
+                            
+                            print(f"\n  Página {current_page + 1}/{total_pages}")
+                            nav = input("  [N]ext / [P]rev / [E]xportar CSV / [Q]uit: ").strip().lower()
+                            
+                            if nav == "n" and current_page < total_pages - 1:
+                                current_page += 1
+                            elif nav == "p" and current_page > 0:
+                                current_page -= 1
+                            elif nav == "e":
+                                # Exportar a CSV
+                                filename = f"tickets_{originator}_{start.strftime('%Y%m%d')}.csv"
+                                with open(filename, "w", encoding="utf-8") as f:
+                                    f.write("key,type,date,status,reference\n")
+                                    for t in sorted_tickets:
+                                        key = t.get("ticket", {}).get("ticketKey", "")
+                                        t_type = t.get("detection", {}).get("type", "")
+                                        date = t.get("detection", {}).get("open", {}).get("date", "")
+                                        status = t.get("current", {}).get("status", "")
+                                        ref = t.get("reference", "").replace(",", ";")
+                                        f.write(f"{key},{t_type},{date},{status},{ref}\n")
+                                print(f"  ✅ Exportado a: {filename}")
+                                break
+                            elif nav == "q" or nav == "":
+                                break
+                        
+                        print(f"  {'─'*65}")
                         
             except Exception as e:
                 print(f"  [Error] {e}")
