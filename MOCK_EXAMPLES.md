@@ -107,7 +107,7 @@ Según la documentación de Axur (página 3352):
 
 ---
 
-## 3. Ejemplo de Resumen por Tipo (Output Esperado)
+## 3. Ejemplo de Resumen por Tipo (Output Real)
 
 Cuando se ejecuta la opción [6] del menú con origen "onepixel":
 
@@ -118,11 +118,29 @@ Cuando se ejecuta la opción [6] del menú con origen "onepixel":
 
   🔍 Buscando tickets con origen 'onepixel'...
 
-  ✅ Encontrados 3 tickets detectados por ONEPIXEL
+  ✅ Encontrados 10 tickets detectados por ONEPIXEL
 
   Resumen por Tipo:
-    • phishing: 2
-    • fake-mobile-app: 1
+    • phishing: 9
+    • fraudulent-brand-use: 1
+
+  ¿Ver detalles de los tickets? (para verificar en plataforma)
+  [S/n]: s
+
+  ─────────────────────────────────────────────────────────────────
+  KEY             │ TIPO                           │ FECHA
+  ─────────────────────────────────────────────────────────────────
+  9m24ia          │ fraudulent-brand-use           │ 2023-09-27
+  ylsrh1          │ phishing                       │ 2024-12-07
+  m91kqj          │ phishing                       │ 2024-09-08
+  p6mnb7          │ phishing                       │ 2024-01-25
+  aqkaek          │ phishing                       │ 2024-12-11
+  34qjpp          │ phishing                       │ 2023-03-02
+  z4100t          │ phishing                       │ 2022-03-18
+  morkxj          │ phishing                       │ 2023-08-29
+  eevzlk          │ phishing                       │ 2024-07-26
+  cdk2gc          │ phishing                       │ 2023-10-03
+  ─────────────────────────────────────────────────────────────────
 
   Presiona ENTER para continuar...
 ```
