@@ -30,6 +30,7 @@ Este documento sirve como puente entre la [documentación oficial de Axur](https
 | Metodología | Pregunta de Negocio | Salida |
 |:---|:---|:---|
 | **Risk Score v3.0** | ¿Cómo está mi postura de seguridad general? | Score 0-1000 |
+| **Risk Score v4.0** | ¿Cómo está cada subsidiaria/marca? | Score por Marca |
 | **DREAD** | ¿Qué incidentes debo atender primero? | Top 10 priorizado |
 | **STRIDE** | ¿Qué tipos de ataque me afectan más? | Matriz de amenazas |
 | **Credenciales** | ¿Qué credenciales están expuestas? | Lista filtrada por dominio |

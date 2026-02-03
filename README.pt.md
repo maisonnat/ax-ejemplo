@@ -26,6 +26,7 @@ Este toolkit fornece uma **arquitetura de referência** para Parceiros Axur cons
 | Problema de Negócio | A Solução (Inclusa) |
 |:---|:---|
 | *"Quão seguro estou agora?"* | **Risk Score v3.0** (Score Executivo 0-1000) |
+| *"Como está cada subsidiária?"* | **Risk Score v4.0** (Análise por Marca) |
 | *"O que devo corrigir primeiro?"* | **Análise DREAD** (Fila priorizada) |
 | *"Quem está me atacando?"* | **Matriz STRIDE** (Classificação de ameaças) |
 | *"Meu site está protegido?"* | **Filtro OnePixel** (Verificação de origem) |
