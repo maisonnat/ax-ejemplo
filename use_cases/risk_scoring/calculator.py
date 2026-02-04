@@ -4,12 +4,11 @@ Risk Score Calculator v3.0
 This module implements the Key Risk Indicator (KRI) methodology for calculating
 an organization's security risk score on a 0-1000 scale.
 
-The score is calculated using 5 KRIs:
-1. Weighted incident volume (base score)
-2. Market benchmark comparison
-3. Stealer log detection (malware factor)
-4. Operational efficiency (resolution time)
-5. Reputational impact (victim complaints)
+The score is calculated using 4 KRIs (Redistributed Weights):
+1. Weighted incident volume (45%)
+2. Market benchmark comparison (25%)
+3. Stealer log detection (20%)
+4. Reputational impact (10%)
 
 Higher scores indicate lower risk (score of 1000 = excellent security posture).
 """
@@ -30,18 +29,6 @@ from core.axur_client import AxurClient
 class RiskScoreResult:
     """
     Container for risk score calculation results.
-    
-    Attributes:
-        score: Final risk score (0-1000, higher is better).
-        grade: Letter grade (A-F) based on score.
-        status: Human-readable status description.
-        total_incidents: Total number of incidents analyzed.
-        weighted_score: Weighted incident volume score.
-        benchmark_ratio: Ratio compared to market median.
-        stealer_factor: Penalty factor from malware detection.
-        efficiency_pct: Operational efficiency percentage.
-        reputational_factor: Penalty factor from victim complaints.
-        breakdown: Detailed breakdown by threat type.
     """
     score: int
     grade: str
@@ -53,6 +40,19 @@ class RiskScoreResult:
     efficiency_pct: float
     reputational_factor: float
     breakdown: Dict[str, Dict[str, int]] = field(default_factory=dict)
+
+@dataclass
+class BrandRiskScore:
+    """
+    Container for per-brand risk score results.
+    """
+    brand_name: str
+    score: int
+    grade: str
+    total_incidents: int
+    weighted_score: int
+    stealer_count: int
+    breakdown: Dict[str, Dict[str, int]]
 
 
 # Threat type weights for incident scoring
@@ -78,18 +78,10 @@ def calculate_weighted_incidents(
 ) -> Tuple[int, int, Dict[str, Dict[str, int]]]:
     """
     Calculate weighted incident score based on threat severity.
-    
-    Args:
-        tickets: List of ticket dictionaries from API.
-        exclude_discarded: If True, exclude tickets with 'discarded' resolution.
-    
-    Returns:
-        Tuple of (weighted_score, total_count, breakdown_by_type).
     """
     breakdown: Dict[str, Dict[str, int]] = {}
     
     for ticket in tickets:
-        # Check for discarded status
         if exclude_discarded:
             resolution = ticket.get("current", {}).get("resolution")
             if resolution == "discarded":
@@ -113,15 +105,6 @@ def calculate_weighted_incidents(
 def calculate_stealer_factor(tickets: List[Dict]) -> Tuple[float, int]:
     """
     Calculate the stealer log penalty factor.
-    
-    Stealer logs indicate active malware infections and represent
-    the highest risk category.
-    
-    Args:
-        tickets: List of ticket dictionaries.
-    
-    Returns:
-        Tuple of (stealer_factor, stealer_count).
     """
     stealer_count = sum(
         1 for t in tickets
@@ -138,51 +121,9 @@ def calculate_stealer_factor(tickets: List[Dict]) -> Tuple[float, int]:
         return 1.0, stealer_count  # +100% penalty
 
 
-def calculate_efficiency_factor(uptime_data: Dict) -> Tuple[float, float]:
-    """
-    Calculate operational efficiency based on resolution times.
-    
-    Args:
-        uptime_data: Dictionary with resolution time buckets.
-    
-    Returns:
-        Tuple of (slow_factor, efficiency_percentage).
-    """
-    total_count = sum([
-        uptime_data.get("lessThan1Day", 0),
-        uptime_data.get("upTo2Days", 0),
-        uptime_data.get("upTo5Days", 0),
-        uptime_data.get("upTo10Days", 0),
-        uptime_data.get("upTo15Days", 0),
-        uptime_data.get("upTo30Days", 0),
-        uptime_data.get("upTo60Days", 0),
-        uptime_data.get("over60Days", 0)
-    ])
-    
-    if total_count == 0:
-        return 0.0, 100.0
-    
-    slow_count = (
-        uptime_data.get("upTo30Days", 0) +
-        uptime_data.get("upTo60Days", 0) +
-        uptime_data.get("over60Days", 0)
-    )
-    
-    efficiency_pct = ((total_count - slow_count) / total_count) * 100
-    slow_factor = (slow_count / total_count) * 0.5  # Max 50% penalty
-    
-    return slow_factor, efficiency_pct
-
-
 def determine_grade(score: int) -> Tuple[str, str]:
     """
     Determine letter grade and status based on score.
-    
-    Args:
-        score: Risk score (0-1000).
-    
-    Returns:
-        Tuple of (grade, status_description).
     """
     if score >= 850:
         return "A", "Excelente - Postura de seguridad superior"
@@ -196,6 +137,125 @@ def determine_grade(score: int) -> Tuple[str, str]:
         return "F", "Crítico - Múltiples vectores de ataque activos"
 
 
+def calculate_risk_score_per_brand(
+    client: Optional[AxurClient] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    days_back: int = 30,
+    verbose: bool = True
+) -> List[BrandRiskScore]:
+    """
+    Calculate Risk Score for each brand individually.
+    
+    Args:
+        client: AxurClient instance.
+        start_date: Start of analysis period.
+        end_date: End of analysis period.
+        days_back: Days to look back.
+        verbose: Print step-by-step details.
+        
+    Returns:
+        List of BrandRiskScore objects.
+    """
+    if client is None:
+        client = AxurClient()
+    
+    if end_date is None:
+        end_date = datetime.now()
+    if start_date is None:
+        start_date = end_date - timedelta(days=days_back)
+        
+    if verbose:
+        print(f"\n--- Risk Score Calculation Step-by-Step ---")
+        print(f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        print("Using 'incident.date' to filter confirmed threats.\n")
+    
+    # 1. Get all brands
+    brands, _ = client.get_customer_assets()
+    results = []
+    
+    # 2. Get confirmed incidents for the whole tenant
+    # Note: Fetching all tickets first to optimize calls, then filtering in memory
+    all_tickets = client.get_tickets(
+        start_date=start_date, 
+        end_date=end_date, 
+        date_field="incident.date" # CRITICAL: Only confirmed incidents
+    )
+    
+    if verbose:
+         print(f"Total confirmed incidents found for tenant: {len(all_tickets)}\n")
+
+    for brand in brands:
+        brand_name = brand["name"]
+        brand_key = brand.get("key")
+        
+        # Robust filtering: Check Name or Key
+        brand_tickets = []
+        for t in all_tickets:
+            assets = t.get("detection", {}).get("assets", [])
+            # Normalize assets to strings if needed
+            assets_str = [str(a).strip() for a in assets]
+            
+            if brand_name in assets_str:
+                brand_tickets.append(t)
+            elif brand_key and brand_key in assets_str:
+                brand_tickets.append(t)
+        
+        if verbose:
+            print(f"Evaluating Brand: {brand_name}")
+            print(f"  > Incidents: {len(brand_tickets)}")
+        
+        # KRI 1: Weighted incidents (45%)
+        # Logic: Higher weighted score -> Higher base penalty
+        weighted_score, total_count, breakdown = calculate_weighted_incidents(brand_tickets)
+        if verbose:
+            print(f"  > Weighted Threat Score: {weighted_score}")
+            
+        # KRI 2: Benchmark (25%)
+        # Simplified: Using 50 as brand-level median (assumed lower than tenant level)
+        sector_median = 50 
+        benchmark_ratio = total_count / sector_median if sector_median > 0 else 1.0
+        
+        # KRI 3: Stealer Factor (20%)
+        stealer_factor, stealer_count = calculate_stealer_factor(brand_tickets)
+        if verbose and stealer_count > 0:
+             print(f"  > active Stealer Logs: {stealer_count} (Penalty: +{stealer_factor:.0%})")
+        
+        # KRI 4: Reputation (10%) - Placeholder
+        reputational_factor = 0.0
+        
+        # Calculation
+        # Base Score (0-500) derived from weighted incidents
+        # Formula: The more incidents, the lower the base score (Higher penalty)
+        if benchmark_ratio > 0:
+            base_penalty = min(500, weighted_score / max(benchmark_ratio, 0.5))
+        else:
+            base_penalty = min(500, weighted_score)
+            
+        # Multipliers
+        total_penalty_multiplier = (1 + stealer_factor) * (1 + reputational_factor)
+        
+        # Final Score
+        final_penalty = base_penalty * total_penalty_multiplier
+        final_score = max(0, min(1000, int(1000 - final_penalty)))
+        
+        grade, _ = determine_grade(final_score)
+        
+        if verbose:
+             print(f"  > Final Score: {final_score} ({grade})\n")
+        
+        results.append(BrandRiskScore(
+            brand_name=brand_name,
+            score=final_score,
+            grade=grade,
+            total_incidents=total_count,
+            weighted_score=weighted_score,
+            stealer_count=stealer_count,
+            breakdown=breakdown
+        ))
+        
+    return results
+
 def calculate_risk_score(
     client: Optional[AxurClient] = None,
     brand_filter: Optional[str] = None,
@@ -205,26 +265,7 @@ def calculate_risk_score(
     exclude_discarded: bool = False
 ) -> RiskScoreResult:
     """
-    Calculate the comprehensive Risk Score v3.0.
-    
-    This function aggregates multiple Key Risk Indicators (KRIs) to produce
-    a single score representing the organization's security posture.
-    
-    Args:
-        client: AxurClient instance. Creates new one if not provided.
-        brand_filter: Optional brand/asset to filter tickets by.
-        start_date: Start of analysis period.
-        end_date: End of analysis period.
-        days_back: Days to look back if dates not specified.
-        exclude_discarded: If True, exclude discarded tickets from analysis.
-    
-    Returns:
-        RiskScoreResult containing score, grade, and detailed breakdown.
-    
-    Example:
-        from use_cases.risk_scoring import calculate_risk_score
-        result = calculate_risk_score(days_back=90)
-        print(f"Score: {result.score} ({result.grade})")
+    Legacy aggregated calculation. (Kept for compatibility, but logic updated slightly)
     """
     if client is None:
         client = AxurClient()
@@ -234,36 +275,34 @@ def calculate_risk_score(
     if start_date is None:
         start_date = end_date - timedelta(days=days_back)
     
-    # Fetch tickets
-    tickets = client.get_tickets(start_date=start_date, end_date=end_date)
+    # UPDATED: Use incident.date by default even for legacy call
+    tickets = client.get_tickets(
+        start_date=start_date, 
+        end_date=end_date,
+        date_field="incident.date" 
+    )
     
-    # Apply brand filter if specified
     if brand_filter:
         tickets = [
             t for t in tickets
             if brand_filter in t.get("detection", {}).get("assets", [])
         ]
     
-    # KRI 1: Weighted incidents
     weighted_score, total_incidents, breakdown = calculate_weighted_incidents(
         tickets, exclude_discarded
     )
     
-    # KRI 2: Benchmark ratio (simplified - using 100 as baseline)
-    sector_median = 100  # Default baseline
+    sector_median = 100 
     benchmark_ratio = total_incidents / sector_median if sector_median > 0 else 1.0
     
-    # KRI 3: Stealer factor
     stealer_factor, _ = calculate_stealer_factor(tickets)
     
-    # KRI 4: Efficiency (simplified - would need uptime API call)
-    efficiency_pct = 80.0  # Default assumption
-    slow_factor = 0.1
+    # Efficiency is REMOVED/Disabled
+    efficiency_pct = 0.0 
+    slow_factor = 0.0
     
-    # KRI 5: Reputational factor (simplified)
     reputational_factor = 0.0
     
-    # Calculate final score
     if benchmark_ratio > 0:
         base_score = min(500, weighted_score / max(benchmark_ratio, 0.5))
     else:
@@ -282,7 +321,7 @@ def calculate_risk_score(
         weighted_score=weighted_score,
         benchmark_ratio=benchmark_ratio,
         stealer_factor=stealer_factor,
-        efficiency_pct=efficiency_pct,
+        efficiency_pct=efficiency_pct, # Now 0
         reputational_factor=reputational_factor,
         breakdown=breakdown
     )

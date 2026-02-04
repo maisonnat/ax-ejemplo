@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from core.interfaces import UseCase
 from core.axur_client import AxurClient
-from .calculator import calculate_risk_score
+from .calculator import calculate_risk_score_per_brand
 
 class RiskScoringUseCase(UseCase):
     @property
@@ -17,48 +17,33 @@ class RiskScoringUseCase(UseCase):
         
     @property
     def description(self) -> str:
-        return "Executive view: Single score 0-1000 vs Market Benchmark"
+        return "Executive view: Score per Brand (0-1000)"
         
     def run(self, client: AxurClient) -> None:
         print("\n" + "=" * 65)
-        print("  RISK SCORE v3.0 (KRI)")
+        print("  RISK SCORE v3.0 (KRI) - Per Brand Analysis")
         print("=" * 65)
         
         # Simple date selection (defaults to 30 days for demo flow)
         end = datetime.now()
         start = end - timedelta(days=30)
-        print(f"  Period: {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}")
-        print("\n  Calculating risk score...")
         
-        result = calculate_risk_score(
+        # Call the new per-brand calculator
+        results = calculate_risk_score_per_brand(
             client=client,
             start_date=start,
-            end_date=end
+            end_date=end,
+            verbose=True # Prints the step-by-step
         )
         
-        print(f"""
-  ╔═══════════════════════════════════════════════════════════╗
-  ║  FINAL SCORE: {result.score:>4}  │  GRADE: {result.grade}                        ║
-  ╚═══════════════════════════════════════════════════════════╝
-  
-  Status: {result.status}
-  
-  Summary:
-    • Total incidents: {result.total_incidents}
-    • Weighted score: {result.weighted_score}
-    • Benchmark ratio: {result.benchmark_ratio:.2f}x
-    • Stealer factor: +{result.stealer_factor * 100:.0f}%
-    • Efficiency: {result.efficiency_pct:.0f}%
-""")
+        print("\n" + "="*65)
+        print(f"  FINAL SUMMARY TABLE")
+        print("="*65)
+        print(f"  {'BRAND':<30} | {'SCORE':<8} | {'GRADE':<5} | {'INCIDENTS'}")
+        print("  " + "-" * 60)
         
-        if result.breakdown:
-            print("  Top threat types:")
-            sorted_types = sorted(
-                result.breakdown.items(), 
-                key=lambda x: x[1]["score"], 
-                reverse=True
-            )[:5]
-            for t_type, info in sorted_types:
-                print(f"    • {t_type}: {info['count']} incidents ({info['score']} pts)")
-        
+        for r in sorted(results, key=lambda x: x.score):
+            print(f"  {r.brand_name[:30]:<30} | {r.score:<8} | {r.grade:<5} | {r.total_incidents}")
+            
+        print("\n  Note: Calculation based on 'incident.date' (Confirmed Threats).")
         input("\n  Press ENTER to continue...")

@@ -151,7 +151,8 @@ class AxurClient:
         end_date: Optional[datetime] = None,
         days_back: int = 30,
         originator: Optional[str] = None,
-        ticket_type: Optional[str] = None
+        ticket_type: Optional[str] = None,
+        date_field: str = "open.date"
     ) -> List[Dict]:
         """
         Retrieve tickets from the Axur platform.
@@ -162,12 +163,14 @@ class AxurClient:
             days_back: Number of days to look back if start_date not provided.
             originator: Filter by detection origin (e.g., "onepixel", "platform").
             ticket_type: Filter by ticket type (e.g., "phishing", "malware").
+            date_field: Date field to filter by (default "open.date"). 
+                       Use "incident.date" to filter by confirmed incidents.
         
         Returns:
             List of ticket dictionaries.
         
         Example:
-            tickets = client.get_tickets(days_back=90, originator="onepixel")
+            tickets = client.get_tickets(days_back=30, date_field="incident.date")
         """
         endpoint = f"{self.base_url}/tickets-api/tickets"
         
@@ -178,10 +181,10 @@ class AxurClient:
         
         params = [
             ("ticket.customer", self.customer_id),
-            ("open.date", f"ge:{self._format_date(start_date)}"),
-            ("open.date", f"le:{self._format_date(end_date, end_of_day=True)}"),
+            (date_field, f"ge:{self._format_date(start_date)}"),
+            (date_field, f"le:{self._format_date(end_date, end_of_day=True)}"),
             ("pageSize", str(self.page_size)),
-            ("sortBy", "open.date"),
+            ("sortBy", date_field),
             ("order", "desc")
         ]
         

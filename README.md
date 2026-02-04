@@ -25,7 +25,7 @@ This toolkit provides a **reference architecture** for Axur Partners to build hi
 
 | Business Problem | The Solution (Included) |
 |:---|:---|
-| *"How secure am I right now?"* | **Risk Score v3.0** (0-1000 Executive Score) |
+| *"How secure am I right now?"* | **Risk Score v3.1** (0-1000 Executive Score - Per Brand) |
 | *"How is each subsidiary doing?"* | **Risk Score v4.0** (Per-Brand Analysis) |
 | *"What should I fix first?"* | **DREAD Analysis** (Prioritized queue) |
 | *"Who is attacking me?"* | **STRIDE Matrix** (Threat classification) |
@@ -40,7 +40,7 @@ This toolkit provides a **reference architecture** for Axur Partners to build hi
 | I want to... | Go to... |
 |:---|:---|
 | **Learn the Basics** | [`/examples`](examples/) - Simple "Hello World" scripts |
-| **Run Per-Brand Analysis** | Run `python examples/02_per_brand_risk.py` |
+| **Run Per-Brand Analysis** | Run `python examples/02_risk_score_per_brand.py` |
 | **Run a Demo** | Run `python main.py` for the interactive menu |
 | **Build an App** | Use the [`/core`](core/) and [`/use_cases`](use_cases/) modules |
 | **Understand the Math** | Read [`/docs/RISK_METHODOLOGY.md`](docs/RISK_METHODOLOGY.md) |
